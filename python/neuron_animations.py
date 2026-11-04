@@ -13,6 +13,8 @@ import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.widgets import Button
 
+from neuroscience_notes import explanation
+
 PRESETS = {
     "regular": (0.02, 0.2, -65, 8),
     "bursting": (0.02, 0.2, -55, 4),
@@ -25,6 +27,22 @@ TITLES = {
     "threshold": "Threshold variability",
     "dap": "Depolarizing after-potential (simulation)",
 }
+
+
+# Representative literature values; these do not identify or fit a recorded cell.
+CAPACITANCE_PF = {"izhikevich": 31.0, "rebound": 147.0, "threshold": 155.0, "dap": 155.0}
+
+
+def current_amperes(model_input, capacitance_pf):
+    """Equivalent physical input under the mV/ms interpretation of model I.
+
+    mV/ms = V/s, so I(A) = C(pF)*1e-12 * model_input.
+    Multiplying the ENTIRE voltage equation by C gives the corresponding
+    current balance. This is dimensional scaling, not a biophysical fit.
+    """
+    if not np.isfinite(capacitance_pf) or capacitance_pf <= 0:
+        raise ValueError("Capacitance must be positive and finite")
+    return np.asarray(model_input) * capacitance_pf * 1e-12
 
 
 def input_current(time, mode, current=10.0):
@@ -40,7 +58,7 @@ def input_current(time, mode, current=10.0):
     return np.where(np.abs(t - 10.0) < 1.0, 20.0, 0.0)
 
 
-def simulate_dap():
+def simulate_dap(capacitance_pf=155.0):
     """Reproduce the numerical scheme in Izhikevich (2004), Figure 1Q.
 
     Source: https://www.izhikevich.org/publications/figure1.m
@@ -56,7 +74,9 @@ def simulate_dap():
     samples, spikes = [(0.0, v)], []
     for i in range(501):
         time = i * dt
-        drive = 20.0 if abs(time - 10.0) < 1.0 else 0.0
+        model_drive = 20.0 if abs(time - 10.0) < 1.0 else 0.0
+        physical_drive = float(current_amperes(model_drive, capacitance_pf))
+        drive = physical_drive / (capacitance_pf * 1e-12)
         v += dt * (0.04 * v * v + 5 * v + 140 - u + drive)
         u += dt * a * (b * v - u)
         if v > 30.0:
@@ -71,15 +91,17 @@ def simulate_dap():
     return t, voltage, input_current(t, "dap"), np.array(spikes)
 
 
-def simulate(mode="izhikevich", pattern="regular", current=10.0):
+def simulate(mode="izhikevich", pattern="regular", current=10.0, capacitance_pf=None):
     """Return time, voltage, current and spike times.
 
     Non-DAP modes: forward Euler, dt=0.01 ms, cutoff 30 mV; v=c, u+=d.
     DAP: author's sequential update at dt=0.1 ms (see simulate_dap).
     Each reset has two samples at the same time to draw a vertical reset.
     """
+    capacitance_pf = CAPACITANCE_PF[mode] if capacitance_pf is None else capacitance_pf
+    current_amperes(0, capacitance_pf)  # validate before integration
     if mode == "dap":
-        return simulate_dap()
+        return simulate_dap(capacitance_pf)
 
     duration = {"izhikevich": 500, "rebound": 200, "threshold": 120}[mode]
     a, b, c, d = PRESETS[pattern] if mode == "izhikevich" else (0.03, 0.25, -60, 4)
@@ -87,7 +109,8 @@ def simulate(mode="izhikevich", pattern="regular", current=10.0):
     u = b * v
     dt = 0.01
     times = np.arange(round(duration / dt) + 1) * dt
-    drive = input_current(times, mode, current)
+    physical_drive = current_amperes(input_current(times, mode, current), capacitance_pf)
+    drive = physical_drive / (capacitance_pf * 1e-12)
     samples, spikes = [(0.0, v)], []
     for i in range(1, len(times)):
         dv = 0.04 * v * v + 5 * v + 140 - u + drive[i]
@@ -140,9 +163,11 @@ def phase(mode, time, spikes):
 
 
 class NeuronAnimation:
-    def __init__(self, mode="izhikevich", pattern="regular", current=10.0):
+    def __init__(self, mode="izhikevich", pattern="regular", current=10.0, capacitance_pf=None):
         self.mode = mode
-        self.t, self.v, self.drive, self.spikes = simulate(mode, pattern, current)
+        self.capacitance_pf = CAPACITANCE_PF[mode] if capacitance_pf is None else capacitance_pf
+        self.t, self.v, model_drive, self.spikes = simulate(mode, pattern, current, self.capacitance_pf)
+        self.drive = current_amperes(model_drive, self.capacitance_pf) * 1e9
         self.duration = float(self.t[-1])
         self.frames = 241
         self.index = 0
@@ -151,9 +176,10 @@ class NeuronAnimation:
             2, 1, sharex=True, figsize=(9, 6), gridspec_kw={"height_ratios": [3, 1]}
         )
         self.fig.subplots_adjust(bottom=0.21, top=0.87, hspace=0.15)
-        self.fig.suptitle(TITLES[mode])
+        self.fig.suptitle(TITLES[mode] + f" · C = {self.capacitance_pf:g} pF")
+        self.fig.text(0.5, 0.015, "Representative capacitance; equivalent current scale, not fitted cell recordings.", ha="center", fontsize=9)
         self.ax_v.set_ylabel("Voltage (mV)")
-        self.ax_i.set_ylabel("I\n(model units)")
+        self.ax_i.set_ylabel("Input current\n(nA)")
         self.ax_i.set_xlabel("Time (ms)")
         self.ax_v.set_xlim(0, self.duration)
         self.ax_v.set_ylim(float(self.v.min()) - 6, float(self.v.max()) + 6)
@@ -228,16 +254,44 @@ class NeuronAnimation:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--explain", action="store_true", help="Print biological context, sources and default protocol for the selected mode")
+    parser.add_argument("--explain-all", action="store_true", help="Print the notes and default protocols for all four modes")
     parser.add_argument("--mode", choices=TITLES, default="izhikevich")
     parser.add_argument("--pattern", choices=PRESETS, default="regular", help="Izhikevich mode only")
     parser.add_argument("--current", type=float, default=10, help="Izhikevich input current (0–30 model units)")
+    parser.add_argument("--capacitance-pf", type=float, help="Override the representative capacitance (pF)")
+    parser.add_argument("--current-na", type=float, help="Izhikevich current in nA; overrides --current")
+    parser.add_argument("--plot", type=Path, metavar="OUTPUT.png", help="Save the completed plot instead of opening a window")
     parser.add_argument("--save", type=Path, metavar="OUTPUT.gif", help="Export a GIF instead of opening a window")
     args = parser.parse_args()
+    if args.explain or args.explain_all:
+        for mode in (TITLES if args.explain_all else [args.mode]):
+            print(explanation(mode), end="\n\n")
+        return
     if not 0 <= args.current <= 30:
         parser.error("--current must be between 0 and 30")
     if args.save and args.save.suffix.lower() != ".gif":
         parser.error("--save requires a .gif filename")
-    demo = NeuronAnimation(args.mode, args.pattern, args.current)
+    cap = CAPACITANCE_PF[args.mode] if args.capacitance_pf is None else args.capacitance_pf
+    if not np.isfinite(cap) or cap <= 0:
+        parser.error("--capacitance-pf must be positive and finite")
+    current = args.current
+    if args.current_na is not None:
+        if args.mode != "izhikevich":
+            parser.error("--current-na applies only to --mode izhikevich")
+        current = args.current_na * 1000 / cap
+        if not np.isfinite(current) or not 0 <= current <= 30:
+            parser.error("Equivalent model current must be in the range 0–30")
+    if args.plot and args.save:
+        parser.error("Choose either --plot or --save")
+    demo = NeuronAnimation(args.mode, args.pattern, current, cap)
+    if args.plot:
+        demo.render(demo.frames - 1)
+        demo.play_button.ax.set_visible(False)
+        demo.replay_button.ax.set_visible(False)
+        demo.fig.savefig(args.plot, dpi=180)
+        plt.close(demo.fig)
+        return
     if args.save:
         demo.save(args.save)
         plt.close(demo.fig)

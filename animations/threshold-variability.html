@@ -1,52 +1,46 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Threshold Variability</title><style>
-:root{color-scheme:light dark;--foreground:light-dark(#222,#eee);--background:light-dark(#fff,#171717);--border:light-dark(#ddd,#444);--muted-foreground:light-dark(#626262,#bbb);--viz-series-1:light-dark(#1969b5,#70b8ff);--viz-series-2:light-dark(#b05910,#ffb971)}
-body{font:16px system-ui,sans-serif;background:var(--background);color:var(--foreground);max-width:850px;margin:32px auto;padding:0 16px}button,input,select{font:inherit}button,select{padding:8px 12px}button{cursor:pointer}h3{font-weight:500}.viz-row,.viz-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.form-label{display:flex;flex-direction:column;gap:6px;max-width:100%}.text-small{font-size:13px}.params{overflow-wrap:anywhere}.tabular-nums{font-variant-numeric:tabular-nums}.form-range{width:100%}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--viz-series-1);outline-offset:3px}
-</style></head><body>
-<div id="threshold-demo">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Neuron animation</title>
 <style>
-#threshold-demo{color:var(--foreground)}#threshold-demo svg{display:block;width:100%}#threshold-demo svg text{fill:var(--foreground);font-size:12px}#threshold-demo .voltage{height:255px}#threshold-demo .current{height:135px}#threshold-demo .state{margin:12px 0;min-height:24px}
-</style>
-<h3>Threshold variability</h3>
-<div class="viz-row"><button type="button" class="btn btn-primary" id="threshold-play">Play</button><span class="text-small">120 ms simulated · slowed to 6 seconds</span></div>
-<div class="state" id="threshold-state" aria-live="polite">Resting</div>
-<svg class="voltage" id="threshold-voltage" role="img" aria-label="Membrane voltage: identical positive inputs before and after inhibition, only the second produces a spike"></svg>
-<svg class="current" id="threshold-current" role="img" aria-label="Two identical positive pulses with an inhibitory pulse before the second"></svg>
+:root{color-scheme:light dark;--fg:light-dark(#222,#eee);--bg:light-dark(#fff,#171717);--grid:light-dark(#ddd,#444);--trace:light-dark(#1969b5,#70b8ff);--current:light-dark(#b05910,#ffb971)}[hidden]{display:none!important}body{font:16px system-ui,sans-serif;max-width:850px;margin:28px auto;padding:0 16px;color:var(--fg);background:var(--bg)}h1{font-size:24px;font-weight:500}.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}button,input,select{font:inherit}button,select{padding:8px 12px}button{cursor:pointer}label{display:flex;flex-direction:column;gap:6px}svg{display:block;width:100%}svg text{font-size:12px;fill:var(--fg)}.note{font-size:13px}#phase{min-height:24px;margin:12px 0}a{color:var(--trace)}
+</style></head><body>
+<h1 id="title"></h1>
+<div class="controls"><button id="play" type="button">Play</button><button id="replay" type="button">Replay</button><span id="cap"></span></div>
+<div class="controls" id="general" hidden><label>Firing pattern<select id="pattern"><option value="regular">Regular spiking</option><option value="bursting">Bursting</option><option value="chattering">Chattering</option><option value="fast">Fast spiking</option></select></label><label>Input current: <output id="amplitude"></output><input id="current" type="range" min="0" max="0.93" step="0.0155" value="0.31"></label></div>
+<div id="phase" aria-live="polite"></div>
+<svg id="voltage" style="height:265px" role="img" aria-label="Animated membrane voltage versus time"></svg>
+<svg id="input" style="height:145px" role="img" aria-label="Applied current in nanoamperes versus time"></svg>
+<p class="note">Representative literature capacitance; currents are an illustrative equivalent scale, not measured currents from a fitted cell. <a href="../STIMULATION.md">Stimulation, parameters and sources</a></p>
 <script>
 (()=>{
-const root=document.getElementById('threshold-demo'),q=s=>root.querySelector(s),NS='http://www.w3.org/2000/svg';
-function input(t){return (t>=10&&t<15)||(t>=90&&t<95)?1:t>=80&&t<85?-6:0;}
-const data=[{t:0,v:-64}],spikes=[];let v=-64,u=.25*v;
-for(let i=1;i<=12000;i++){const t=i*.01,I=input(t),dv=.04*v*v+5*v+140-u+I,du=.03*(.25*v-u);v+=.01*dv;u+=.01*du;if(v>=30){data.push({t,v:30});spikes.push(t);v=-60;u+=4;data.push({t,v});}else if(i%5===0)data.push({t,v});}
-const minV=Math.min(...data.map(p=>p.v))-5,maxV=35;
-let time=0,running=false,last=null,raf=null,plots=[];
-const button=q('#threshold-play');
-function build(svg,voltage){const w=Math.max(280,svg.getBoundingClientRect().width),h=voltage?255:135,top=12,bottom=h-48;
- svg.replaceChildren();svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
- function el(tag,attrs,text){const e=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!==undefined)e.textContent=text;svg.appendChild(e);return e;}
- const x=t=>64+(w-82)*t/120,y=z=>voltage?top+(bottom-top)*(maxV-z)/(maxV-minV):top+(bottom-top)*(2-z)/9;
- el('title',{},voltage?'Membrane voltage':'Applied current');
- el('rect',{x:64,y:top,width:w-82,height:bottom-top,fill:'none',stroke:'var(--border)'});
- el('rect',{x:x(80),y:top,width:x(85)-x(80),height:bottom-top,fill:'var(--viz-series-2)',opacity:.1});
- (voltage?[-80,-40,0,30]:[1,0,-6]).forEach(z=>{el('text',{x:56,y:y(z)+4,'text-anchor':'end'},z);el('line',{x1:64,x2:w-18,y1:y(z),y2:y(z),stroke:'var(--border)'});});
- [0,60,120].forEach(t=>el('text',{x:x(t),y:bottom+19,'text-anchor':t===120?'end':'middle'},t));
- el('text',{x:(w+46)/2,y:h-6,'text-anchor':'middle',class:'axis-title','data-axis':'x'},'Time (ms)');
- el('text',{transform:`translate(16 ${(top+bottom)/2}) rotate(-90)`,'text-anchor':'middle',class:'axis-title','data-axis':'y'},voltage?'Voltage (mV)':'I (model units)');
- const path=el('path',{fill:'none',stroke:voltage?'var(--viz-series-1)':'var(--viz-series-2)','stroke-width':2});
- const guide=el('line',{x1:64,x2:64,y1:top,y2:bottom,stroke:'var(--muted-foreground)','stroke-dasharray':'3 4'});
- return {path,guide,x,y,voltage};
+const mode='threshold',C={izhikevich:31,rebound:147,threshold:155,dap:155}[mode],duration={izhikevich:500,rebound:200,threshold:120,dap:50}[mode];
+const $=id=>document.getElementById(id),presets={regular:[.02,.2,-65,8],bursting:[.02,.2,-55,4],chattering:[.02,.2,-50,2],fast:[.1,.2,-65,2]};
+$('title').textContent={izhikevich:'Izhikevich neuron',rebound:'Rebound spike',threshold:'Threshold variability',dap:'Depolarizing after-potential'}[mode];$('cap').textContent=`C = ${C} pF · slowed playback`;$('general').hidden=mode!=='izhikevich';
+let data=[],spikes=[],t=0,running=false,last=null,raf=null,plots=[];
+function modelInput(time){if(mode==='izhikevich')return time>=50?Number($('current').value)*1000/C:0;if(mode==='rebound')return time>=40&&time<60?-5:0;if(mode==='threshold')return (time>=10&&time<15)||(time>=90&&time<95)?1:time>=80&&time<85?-6:0;return Math.abs(time-10)<1?20:0;}
+function currentNA(time){return modelInput(time)*C/1000;}
+function simulate(){const dt=mode==='dap'?.1:.01;let [a,b,c,d]=mode==='izhikevich'?presets[$('pattern').value]:mode==='dap'?[1,.2,-60,-21]:[.03,.25,-60,4],v=mode==='dap'?-70:mode==='izhikevich'?-65:-64,u=b*v;data=[{t:0,v}];spikes=[];
+const begin=mode==='dap'?0:1;for(let i=begin;i<=Math.round(duration/dt);i++){const time=i*dt,physical=currentNA(time)*1e-9,drive=physical/(C*1e-12),dv=.04*v*v+5*v+140-u+drive,du=a*(b*v-u);v+=dt*dv;u+=dt*(mode==='dap'?a*(b*v-u):du);if(mode==='dap'?v>30:v>=30){data.push({t:time,v:30});spikes.push(time);v=c;u+=d;data.push({t:time,v});}else if(mode==='dap'||i%5===0)data.push({t:time,v});}
+$('amplitude').textContent=`${Number($('current').value).toFixed(3)} nA`;
 }
-function draw(){time=Number.isFinite(time)?Math.max(0,Math.min(120,time)):0;for(const p of plots){const pts=p.voltage?data.filter(d=>d.t<=time):[{t:0,v:0},...[{t:10,v:0},{t:10,v:1},{t:15,v:1},{t:15,v:0},{t:80,v:0},{t:80,v:-6},{t:85,v:-6},{t:85,v:0},{t:90,v:0},{t:90,v:1},{t:95,v:1},{t:95,v:0}].filter(d=>d.t<=time),{t:time,v:input(time)}];p.path.setAttribute('d',pts.map((d,i)=>`${i?'L':'M'}${p.x(d.t).toFixed(2)},${p.y(d.v).toFixed(2)}`).join(''));p.guide.setAttribute('x1',p.x(time));p.guide.setAttribute('x2',p.x(time));}
- const label=time<10?'Resting':time<25?'First positive pulse · no spike':time<80?'Resting':time<85?'Inhibitory pulse':time<90?'Inhibition ends':time<spikes[0]?'Same positive pulse · voltage rises':time<108?'Spike after inhibition':'Recovery';
- if(q('#threshold-state').textContent!==label)q('#threshold-state').textContent=label;
+function make(svg,isV){const w=Math.max(280,svg.getBoundingClientRect().width),h=isV?265:145,top=12,bottom=h-48,left=70,right=w-18;
+svg.replaceChildren();svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+function el(tag,attrs,text){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!==undefined)e.textContent=text;svg.appendChild(e);return e;}
+const values=isV?data.map(p=>p.v):[0,...data.map(p=>currentNA(p.t))],lo=Math.min(...values),hi=Math.max(...values),pad=Math.max((hi-lo)*.08,isV?3:.03),min=lo-pad,max=hi+pad;
+const x=z=>left+(right-left)*z/duration,y=z=>top+(bottom-top)*(max-z)/(max-min);
+el('rect',{x:left,y:top,width:right-left,height:bottom-top,fill:'none',stroke:'var(--grid)'});
+const yt=isV?[-70,-40,0,30]:[lo,...(lo!==hi?[hi]:[])];yt.forEach(z=>{el('line',{x1:left,x2:right,y1:y(z),y2:y(z),stroke:'var(--grid)'});el('text',{x:left-8,y:y(z)+4,'text-anchor':'end'},isV?z:z.toFixed(3));});
+[0,duration/2,duration].forEach(z=>el('text',{x:x(z),y:bottom+19,'text-anchor':z===duration?'end':'middle'},z));
+el('text',{x:(left+right)/2,y:h-6,'text-anchor':'middle'},'Time (ms)');el('text',{transform:`translate(16 ${(top+bottom)/2}) rotate(-90)`,'text-anchor':'middle'},isV?'Voltage (mV)':'Input current (nA)');
+return {isV,x,y,path:el('path',{fill:'none',stroke:isV?'var(--trace)':'var(--current)','stroke-width':2}),guide:el('line',{x1:left,x2:left,y1:top,y2:bottom,stroke:'var(--fg)','stroke-dasharray':'3 4',opacity:.5})};
 }
-function layout(){plots=[build(q('#threshold-voltage'),true),build(q('#threshold-current'),false)];draw();}
-function stop(){running=false;if(raf!==null)cancelAnimationFrame(raf);raf=null;last=null;button.textContent=time>=120?'Replay':'Play';}
-function tick(now){if(!running)return;const dt=last===null?0:Math.max(0,Math.min(100,now-last));last=now;time=Math.min(120,time+dt*.02);draw();if(time>=120)stop();else raf=requestAnimationFrame(tick);}
-button.onclick=()=>{if(running){stop();return;}if(time>=120)time=0;running=true;last=null;button.textContent='Pause';raf=requestAnimationFrame(tick);};
-layout();new ResizeObserver(layout).observe(root);if(!matchMedia('(prefers-reduced-motion: reduce)').matches)button.onclick();
+function phase(){if(mode==='izhikevich')return t<50?'Current off':'Current on';if(mode==='rebound')return t<40?'Resting':t<60?'Inhibitory pulse':t<spikes[0]?'Inhibition ends; voltage rebounds':'Rebound spike and recovery';if(mode==='threshold')return t<10?'Resting':t<25?'First positive pulse: no spike':t<80?'Resting':t<85?'Inhibitory pulse':t<90?'Inhibition ends':'Same positive pulse: spike and recovery';return t<=9?'Resting':t<11?'Excitatory pulse':t<11.6?'Main spike and reset':t<20?'Depolarizing after-potential (DAP)':'Returning to rest';}
+function draw(){t=Number.isFinite(t)?Math.max(0,Math.min(duration,t)):0;const shown=data.filter(p=>p.t<=t);for(const p of plots){const pts=p.isV?shown:shown.map(d=>({t:d.t,v:currentNA(d.t)}));p.path.setAttribute('d',pts.map((d,i)=>`${i?'L':'M'}${p.x(d.t).toFixed(2)},${p.y(d.v).toFixed(2)}`).join(''));p.guide.setAttribute('x1',p.x(t));p.guide.setAttribute('x2',p.x(t));}const state=phase();if($('phase').textContent!==state)$('phase').textContent=state;}
+function layout(){if(!data.length)return;plots=[make($('voltage'),true),make($('input'),false)];draw();}
+function stop(){running=false;if(raf!==null)cancelAnimationFrame(raf);raf=null;last=null;$('play').textContent=t>=duration?'Replay':'Play';}
+function tick(now){if(!running)return;const delta=last===null?0:Math.max(0,Math.min(100,now-last));last=now;t=Math.min(duration,t+delta*duration/8000);draw();if(t>=duration)stop();else raf=requestAnimationFrame(tick);}
+function play(){if(running){stop();return;}if(t>=duration)t=0;running=true;last=null;$('play').textContent='Pause';raf=requestAnimationFrame(tick);}
+function reset(){stop();t=0;simulate();layout();}
+$('play').onclick=play;$('replay').onclick=()=>{reset();play();};$('current').oninput=reset;$('pattern').onchange=reset;
+simulate();layout();new ResizeObserver(layout).observe($('voltage'));if(!matchMedia('(prefers-reduced-motion: reduce)').matches)play();
 })();
-</script>
-</div>
-
-</body></html>
+</script></body></html>

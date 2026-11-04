@@ -1,18 +1,28 @@
 # Cancer Research — Neuron Animations
 
-Interactive neuron animations created for a science fair project.
+Four educational neuron simulations for a science fair project, provided as standalone HTML and Python code.
 
-Open any HTML file in a modern web browser. No installation or server is needed.
+## Browser animations
 
-- `animations/izhikevich-neuron.html`: interactive Izhikevich model with firing presets and adjustable current.
-- `animations/rebound-spike.html`: a spike after inhibition ends.
-- `animations/threshold-variability.html`: two equal positive pulses, with inhibition before the second.
-- `animations/depolarizing-after-potential.html`: illustrative spike and after-potential trace.
+Download an HTML file from [animations](animations) and open it in a modern browser:
 
-The first three animations numerically integrate the Izhikevich model. The depolarizing after-potential animation is a schematic matching the reference image, not a numerical model fit. These are educational demonstrations, not experimental cancer treatment results.
+- [Izhikevich neuron and firing presets](animations/izhikevich-neuron.html)
+- [Rebound spike](animations/rebound-spike.html)
+- [Threshold variability](animations/threshold-variability.html)
+- [Depolarizing after-potential (DAP)](animations/depolarizing-after-potential.html)
 
-Model reference: E. M. Izhikevich, “Simple Model of Spiking Neurons,” IEEE Transactions on Neural Networks 14(6), 1569–1572 (2003). https://www.izhikevich.org/publications/spikes.pdf
+All four calculate voltage numerically. The browser DAP now uses the published numerical example instead of a schematic.
 
-## Python simulations
+## Python
 
-See [python/README.md](python/README.md) for all four Python animations. The Python DAP mode now numerically reproduces the author’s Figure 1Q using its 0.1 ms sequential update. The HTML DAP above remains a schematic.
+See [Python instructions](python/README.md) for installation, animation controls, physical current input, capacitance overrides, plots and GIF export.
+
+## Stimulation and interpretation
+
+[STIMULATION.md](STIMULATION.md) contains the equations, parameters, time steps, pulse amplitudes and intervals, current conversion, and primary sources.
+
+Current is displayed in nanoamperes using representative literature capacitances: 31 pF for the general regular-spiking example, 147 pF for rebound, and 155 pF for threshold variability and DAP. These are illustrative equivalent current scales; the generic model parameters are not fitted to the recorded cells. Other firing presets retain a reference scale, not a measured capacitance for each phenotype. DAP reproduces a step-sensitive 0.1 ms numerical method.
+
+These are educational demonstrations, not experimental cancer treatment results.
+
+[Biological explanations](NEUROSCIENCE.md) cover the main channels, human-relevant locations, functions, evidence limits, time steps and spike cutoff. The same notes are available in Python through `--explain-all`.

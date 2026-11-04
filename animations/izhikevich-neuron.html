@@ -1,41 +1,46 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Izhikevich Neuron</title><style>
-:root{color-scheme:light dark;--foreground:light-dark(#222,#eee);--background:light-dark(#fff,#171717);--border:light-dark(#ddd,#444);--muted-foreground:light-dark(#626262,#bbb);--viz-series-1:light-dark(#1969b5,#70b8ff);--viz-series-2:light-dark(#b05910,#ffb971)}
-body{font:16px system-ui,sans-serif;background:var(--background);color:var(--foreground);max-width:850px;margin:32px auto;padding:0 16px}button,input,select{font:inherit}button,select{padding:8px 12px}button{cursor:pointer}h3{font-weight:500}.viz-row,.viz-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.form-label{display:flex;flex-direction:column;gap:6px;max-width:100%}.text-small{font-size:13px}.params{overflow-wrap:anywhere}.tabular-nums{font-variant-numeric:tabular-nums}.form-range{width:100%}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--viz-series-1);outline-offset:3px}
-</style></head><body>
-<div id="izh-neuron">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Neuron animation</title>
 <style>
-#izh-neuron{color:var(--foreground)}#izh-neuron .plot{width:100%;height:290px;display:block}#izh-neuron svg text{fill:var(--foreground);font-size:12px}#izh-neuron .params{margin:12px 0}#izh-neuron .live{min-height:24px}
-</style>
-<h3>Izhikevich neuron</h3>
-<div class="viz-controls">
-<label class="form-label">Firing pattern<select class="form-select" id="izh-type"><option value="rs">Regular spiking</option><option value="ib">Bursting</option><option value="ch">Chattering</option><option value="fs">Fast spiking</option></select></label>
-<label class="form-label">Input current I: <output id="izh-current-value">10</output> (model units)<input class="form-range" id="izh-current" type="range" min="0" max="30" step="0.5" value="10"></label>
-</div>
-<div class="viz-row"><button class="btn btn-primary" id="izh-play" type="button">Play</button><button class="btn" id="izh-restart" type="button">Restart</button><span class="text-small">Playback: 100 ms of simulation per second</span></div>
-<div class="text-small params" id="izh-params"></div>
-<svg class="plot" id="izh-plot" role="img" aria-label="Animated membrane voltage trace over a 500 millisecond simulation"></svg>
-<div class="live tabular-nums" id="izh-live" aria-live="polite"></div>
+:root{color-scheme:light dark;--fg:light-dark(#222,#eee);--bg:light-dark(#fff,#171717);--grid:light-dark(#ddd,#444);--trace:light-dark(#1969b5,#70b8ff);--current:light-dark(#b05910,#ffb971)}[hidden]{display:none!important}body{font:16px system-ui,sans-serif;max-width:850px;margin:28px auto;padding:0 16px;color:var(--fg);background:var(--bg)}h1{font-size:24px;font-weight:500}.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}button,input,select{font:inherit}button,select{padding:8px 12px}button{cursor:pointer}label{display:flex;flex-direction:column;gap:6px}svg{display:block;width:100%}svg text{font-size:12px;fill:var(--fg)}.note{font-size:13px}#phase{min-height:24px;margin:12px 0}a{color:var(--trace)}
+</style></head><body>
+<h1 id="title"></h1>
+<div class="controls"><button id="play" type="button">Play</button><button id="replay" type="button">Replay</button><span id="cap"></span></div>
+<div class="controls" id="general" hidden><label>Firing pattern<select id="pattern"><option value="regular">Regular spiking</option><option value="bursting">Bursting</option><option value="chattering">Chattering</option><option value="fast">Fast spiking</option></select></label><label>Input current: <output id="amplitude"></output><input id="current" type="range" min="0" max="0.93" step="0.0155" value="0.31"></label></div>
+<div id="phase" aria-live="polite"></div>
+<svg id="voltage" style="height:265px" role="img" aria-label="Animated membrane voltage versus time"></svg>
+<svg id="input" style="height:145px" role="img" aria-label="Applied current in nanoamperes versus time"></svg>
+<p class="note">Representative literature capacitance; currents are an illustrative equivalent scale, not measured currents from a fitted cell. <a href="../STIMULATION.md">Stimulation, parameters and sources</a></p>
 <script>
 (()=>{
-const root=document.getElementById('izh-neuron'),q=s=>root.querySelector(s),svg=q('#izh-plot'),NS='http://www.w3.org/2000/svg';
-const presets={rs:[.02,.2,-65,8],ib:[.02,.2,-55,4],ch:[.02,.2,-50,2],fs:[.1,.2,-65,2]};
-let points=[],spikes=[],params=presets.rs,t=0,running=false,last=null,raf=null,path,dot,width=600;
-const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-function el(tag,attrs,text){let e=document.createElementNS(NS,tag);Object.entries(attrs||{}).forEach(([k,v])=>e.setAttribute(k,v));if(text!==undefined)e.textContent=text;svg.appendChild(e);return e;}
-function simulate(){params=presets[q('#izh-type').value];let[a,b,c,d]=params,v=-65,u=b*v,I=+q('#izh-current').value;points=[{t:0,v}];spikes=[];const dt=.1;for(let i=1;i<=5000;i++){let now=i*dt,input=now>=50?I:0;let dv=.04*v*v+5*v+140-u+input,du=a*(b*v-u);v+=dt*dv;u+=dt*du;if(v>=30){points.push({t:now,v:30});spikes.push(now);v=c;u+=d;points.push({t:now,v});}else points.push({t:now,v});}q('#izh-params').textContent=`a = ${a} · b = ${b} · c = ${c} mV · d = ${d} · Current begins at 50 ms`;
+const mode='izhikevich',C={izhikevich:31,rebound:147,threshold:155,dap:155}[mode],duration={izhikevich:500,rebound:200,threshold:120,dap:50}[mode];
+const $=id=>document.getElementById(id),presets={regular:[.02,.2,-65,8],bursting:[.02,.2,-55,4],chattering:[.02,.2,-50,2],fast:[.1,.2,-65,2]};
+$('title').textContent={izhikevich:'Izhikevich neuron',rebound:'Rebound spike',threshold:'Threshold variability',dap:'Depolarizing after-potential'}[mode];$('cap').textContent=`C = ${C} pF · slowed playback`;$('general').hidden=mode!=='izhikevich';
+let data=[],spikes=[],t=0,running=false,last=null,raf=null,plots=[];
+function modelInput(time){if(mode==='izhikevich')return time>=50?Number($('current').value)*1000/C:0;if(mode==='rebound')return time>=40&&time<60?-5:0;if(mode==='threshold')return (time>=10&&time<15)||(time>=90&&time<95)?1:time>=80&&time<85?-6:0;return Math.abs(time-10)<1?20:0;}
+function currentNA(time){return modelInput(time)*C/1000;}
+function simulate(){const dt=mode==='dap'?.1:.01;let [a,b,c,d]=mode==='izhikevich'?presets[$('pattern').value]:mode==='dap'?[1,.2,-60,-21]:[.03,.25,-60,4],v=mode==='dap'?-70:mode==='izhikevich'?-65:-64,u=b*v;data=[{t:0,v}];spikes=[];
+const begin=mode==='dap'?0:1;for(let i=begin;i<=Math.round(duration/dt);i++){const time=i*dt,physical=currentNA(time)*1e-9,drive=physical/(C*1e-12),dv=.04*v*v+5*v+140-u+drive,du=a*(b*v-u);v+=dt*dv;u+=dt*(mode==='dap'?a*(b*v-u):du);if(mode==='dap'?v>30:v>=30){data.push({t:time,v:30});spikes.push(time);v=c;u+=d;data.push({t:time,v});}else if(mode==='dap'||i%5===0)data.push({t:time,v});}
+$('amplitude').textContent=`${Number($('current').value).toFixed(3)} nA`;
 }
-const x=v=>64+(width-82)*v/500,y=v=>20+(230-20)*(35-v)/125;
-function frame(){svg.replaceChildren();width=Math.max(300,svg.getBoundingClientRect().width);svg.setAttribute('viewBox',`0 0 ${width} 290`);el('title',{},'Membrane voltage versus time');el('rect',{x:64,y:20,width:width-82,height:210,fill:'none',stroke:'var(--border)','data-chart-frame':''});[-80,-40,0,30].forEach(v=>{el('line',{x1:64,x2:width-18,y1:y(v),y2:y(v),stroke:'var(--border)'});el('text',{x:56,y:y(v)+4,'text-anchor':'end'},v)});[0,250,500].forEach(v=>el('text',{x:x(v),y:250,'text-anchor':v===500?'end':'middle'},v));el('text',{x:(width+46)/2,y:278,'text-anchor':'middle',class:'axis-title','data-axis':'x'},'Time (ms)');el('text',{transform:'translate(16 125) rotate(-90)','text-anchor':'middle',class:'axis-title','data-axis':'y'},'Voltage (mV)');el('line',{x1:x(50),x2:x(50),y1:20,y2:230,stroke:'var(--muted-foreground)','stroke-dasharray':'3 4'});path=el('path',{fill:'none',stroke:'var(--viz-series-1)','stroke-width':2});dot=el('circle',{r:4,fill:'var(--viz-series-1)'});draw();}
-function draw(){if(!path||!dot)return;t=Number.isFinite(t)?Math.max(0,Math.min(500,t)):0;let shown=points.filter(p=>p.t<=t);if(!shown.length){path.setAttribute('d','');dot.setAttribute('visibility','hidden');return;}dot.setAttribute('visibility','visible');path.setAttribute('d',shown.map((p,i)=>`${i?'L':'M'}${x(p.t).toFixed(2)},${y(p.v).toFixed(2)}`).join(''));let p=shown[shown.length-1];dot.setAttribute('cx',x(p.t));dot.setAttribute('cy',y(p.v));}
-function status(){q('#izh-live').textContent=`${Math.round(t)} / 500 ms · ${spikes.filter(s=>s<=t).length} spikes`;}
-function stop(){running=false;if(raf!==null)cancelAnimationFrame(raf);raf=null;last=null;q('#izh-play').textContent=t>=500?'Replay':'Play';status();}
-function tick(now){if(!running)return;const delta=last===null?0:Math.max(0,Math.min(now-last,100));t=Math.min(500,t+delta*.1);last=now;draw();if(t>=500)stop();else raf=requestAnimationFrame(tick);}
-function play(){if(running){stop();return;}if(t>=500)t=0;running=true;last=null;q('#izh-play').textContent='Pause';raf=requestAnimationFrame(tick);}
-function reset(){stop();t=0;simulate();frame();status();}
-q('#izh-play').onclick=play;q('#izh-restart').onclick=reset;q('#izh-type').onchange=reset;q('#izh-current').oninput=()=>{q('#izh-current-value').textContent=q('#izh-current').value;reset();};new ResizeObserver(frame).observe(svg);simulate();frame();status();if(!reduced)play();
+function make(svg,isV){const w=Math.max(280,svg.getBoundingClientRect().width),h=isV?265:145,top=12,bottom=h-48,left=70,right=w-18;
+svg.replaceChildren();svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+function el(tag,attrs,text){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!==undefined)e.textContent=text;svg.appendChild(e);return e;}
+const values=isV?data.map(p=>p.v):[0,...data.map(p=>currentNA(p.t))],lo=Math.min(...values),hi=Math.max(...values),pad=Math.max((hi-lo)*.08,isV?3:.03),min=lo-pad,max=hi+pad;
+const x=z=>left+(right-left)*z/duration,y=z=>top+(bottom-top)*(max-z)/(max-min);
+el('rect',{x:left,y:top,width:right-left,height:bottom-top,fill:'none',stroke:'var(--grid)'});
+const yt=isV?[-70,-40,0,30]:[lo,...(lo!==hi?[hi]:[])];yt.forEach(z=>{el('line',{x1:left,x2:right,y1:y(z),y2:y(z),stroke:'var(--grid)'});el('text',{x:left-8,y:y(z)+4,'text-anchor':'end'},isV?z:z.toFixed(3));});
+[0,duration/2,duration].forEach(z=>el('text',{x:x(z),y:bottom+19,'text-anchor':z===duration?'end':'middle'},z));
+el('text',{x:(left+right)/2,y:h-6,'text-anchor':'middle'},'Time (ms)');el('text',{transform:`translate(16 ${(top+bottom)/2}) rotate(-90)`,'text-anchor':'middle'},isV?'Voltage (mV)':'Input current (nA)');
+return {isV,x,y,path:el('path',{fill:'none',stroke:isV?'var(--trace)':'var(--current)','stroke-width':2}),guide:el('line',{x1:left,x2:left,y1:top,y2:bottom,stroke:'var(--fg)','stroke-dasharray':'3 4',opacity:.5})};
+}
+function phase(){if(mode==='izhikevich')return t<50?'Current off':'Current on';if(mode==='rebound')return t<40?'Resting':t<60?'Inhibitory pulse':t<spikes[0]?'Inhibition ends; voltage rebounds':'Rebound spike and recovery';if(mode==='threshold')return t<10?'Resting':t<25?'First positive pulse: no spike':t<80?'Resting':t<85?'Inhibitory pulse':t<90?'Inhibition ends':'Same positive pulse: spike and recovery';return t<=9?'Resting':t<11?'Excitatory pulse':t<11.6?'Main spike and reset':t<20?'Depolarizing after-potential (DAP)':'Returning to rest';}
+function draw(){t=Number.isFinite(t)?Math.max(0,Math.min(duration,t)):0;const shown=data.filter(p=>p.t<=t);for(const p of plots){const pts=p.isV?shown:shown.map(d=>({t:d.t,v:currentNA(d.t)}));p.path.setAttribute('d',pts.map((d,i)=>`${i?'L':'M'}${p.x(d.t).toFixed(2)},${p.y(d.v).toFixed(2)}`).join(''));p.guide.setAttribute('x1',p.x(t));p.guide.setAttribute('x2',p.x(t));}const state=phase();if($('phase').textContent!==state)$('phase').textContent=state;}
+function layout(){if(!data.length)return;plots=[make($('voltage'),true),make($('input'),false)];draw();}
+function stop(){running=false;if(raf!==null)cancelAnimationFrame(raf);raf=null;last=null;$('play').textContent=t>=duration?'Replay':'Play';}
+function tick(now){if(!running)return;const delta=last===null?0:Math.max(0,Math.min(100,now-last));last=now;t=Math.min(duration,t+delta*duration/8000);draw();if(t>=duration)stop();else raf=requestAnimationFrame(tick);}
+function play(){if(running){stop();return;}if(t>=duration)t=0;running=true;last=null;$('play').textContent='Pause';raf=requestAnimationFrame(tick);}
+function reset(){stop();t=0;simulate();layout();}
+$('play').onclick=play;$('replay').onclick=()=>{reset();play();};$('current').oninput=reset;$('pattern').onchange=reset;
+simulate();layout();new ResizeObserver(layout).observe($('voltage'));if(!matchMedia('(prefers-reduced-motion: reduce)').matches)play();
 })();
-</script>
-</div>
-
-</body></html>
+</script></body></html>

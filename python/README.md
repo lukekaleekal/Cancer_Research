@@ -1,42 +1,42 @@
-# Python neuron animations
+# Python neuron simulations
 
-Install Python 3.10 or newer, then run these commands from this folder:
+Requires Python 3.10+ and a desktop Matplotlib backend for interactive windows.
 
 ```sh
 python -m pip install -r requirements.txt
-python neuron_animations.py
+python neuron_animations.py --mode izhikevich
 python neuron_animations.py --mode rebound
 python neuron_animations.py --mode threshold
 python neuron_animations.py --mode dap
 ```
 
-The window has Play/Pause and Replay buttons. Each animation takes about eight seconds. Use a desktop Python environment with a Matplotlib GUI backend to open the window. On a headless computer, export a GIF instead:
+Use Play/Pause and Replay. All four modes calculate voltage numerically. Input current is displayed in nA (1 nA = 1e-9 A), using representative literature capacitances. See [equations, stimulation protocols and sources](../STIMULATION.md) for assumptions and exact pulse times.
+
+The general mode defaults to regular spiking, C=31 pF and a +0.310 nA step starting at 50 ms. Set its applied current explicitly with:
 
 ```sh
-MPLBACKEND=Agg python neuron_animations.py --mode rebound --save rebound.gif
+python neuron_animations.py --mode izhikevich --current-na 0.310
+python neuron_animations.py --mode izhikevich --pattern bursting --current-na 0.372
 ```
 
-Change the general model's firing pattern or current with:
+The optional `--capacitance-pf` overrides the representative capacitance. Without `--current-na`, this changes the physical current scale while keeping the normalized protocol unchanged. When switching firing presets, the reference capacitance is not a measurement for that new phenotype. The legacy `--current` option accepts a normalized 0–30 input for the general mode; `--current-na` overrides it.
+
+Export a plot or GIF (also works headlessly):
 
 ```sh
-python neuron_animations.py --pattern bursting --current 12
+MPLBACKEND=Agg python neuron_animations.py --mode dap --plot dap.png
+MPLBACKEND=Agg python neuron_animations.py --mode dap --save dap.gif
 ```
 
-Available patterns: `regular`, `bursting`, `chattering`, `fast`. Current range: 0–30 model units.
+Regular/rebound/threshold use 0.01 ms forward Euler; DAP uses the author's 0.1 ms sequential update, which is step-sensitive. These are illustrative dimensional scalings, not fitted recordings or experimental stimulus recommendations.
 
-All four modes now compute their voltage traces from the Izhikevich equations. DAP no longer uses drawn anchor points.
+## Biology, stimulation and threshold explanations
 
-## DAP numerical method
+```sh
+python neuron_animations.py --mode rebound --explain
+python neuron_animations.py --explain-all
+```
 
-Run `python neuron_animations.py --mode dap`.
+[neuroscience_notes.py](neuroscience_notes.py) contains channel names and roles, human-relevant locations, proposed functions, evidence limits, source links, all four default protocols and time steps. These are explanatory annotations, not explicit ion-channel equations. `--explain` prints the default protocol; capacitance/current overrides do not modify these reference notes.
 
-DAP reproduces the author’s Figure 1Q numerical method: `a=1`, `b=0.2`, `c=-60`, `d=-21`, initial `v=-70`, initial `u=-14`, and a current pulse of 20 model units for `abs(t-10)<1` ms. The run lasts 50 ms. Its time step is **0.1 ms**. Voltage is updated first, then recovery uses that updated voltage, then the spike cutoff/reset is applied. The other three modes retain their **0.01 ms** forward Euler step.
-
-This DAP example is sensitive to the integration step and update order. It reproduces the published discrete calculation; reducing the step with these same parameters can change the firing pattern. Do not describe it as a step-independent reproduction of the continuous equations or a measured biological trace.
-
-The simulation yields one spike near 11.3 ms, a post-reset DAP peak near -51.1 mV at 14.4 ms, and a return toward -70 mV.
-
-Sources:
-- Author’s original numerical example, section Q: https://www.izhikevich.org/publications/figure1.m
-- Izhikevich (2004), Which Model to Use for Cortical Spiking Neurons?: https://www.izhikevich.org/publications/whichmod.htm
-- Original model: https://www.izhikevich.org/publications/spikes.pdf
+All modes use a **+30 mV peak cutoff** for spike/reset detection. This is not a fixed initiation threshold. Spike initiation depends on state and input. See [the biology notes](../NEUROSCIENCE.md).
