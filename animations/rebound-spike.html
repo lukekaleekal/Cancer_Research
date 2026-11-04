@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rebound Spike</title><style>
+:root{color-scheme:light dark;--foreground:light-dark(#222,#eee);--background:light-dark(#fff,#171717);--border:light-dark(#ddd,#444);--muted-foreground:light-dark(#626262,#bbb);--viz-series-1:light-dark(#1969b5,#70b8ff);--viz-series-2:light-dark(#b05910,#ffb971)}
+body{font:16px system-ui,sans-serif;background:var(--background);color:var(--foreground);max-width:850px;margin:32px auto;padding:0 16px}button,input,select{font:inherit}button,select{padding:8px 12px}button{cursor:pointer}h3{font-weight:500}.viz-row,.viz-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.form-label{display:flex;flex-direction:column;gap:6px;max-width:100%}.text-small{font-size:13px}.params{overflow-wrap:anywhere}.tabular-nums{font-variant-numeric:tabular-nums}.form-range{width:100%}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--viz-series-1);outline-offset:3px}
+</style></head><body>
+<div id="rebound-demo">
+<style>
+#rebound-demo{color:var(--foreground)}#rebound-demo svg{display:block;width:100%}#rebound-demo svg text{fill:var(--foreground);font-size:12px}#rebound-demo .voltage{height:255px}#rebound-demo .current{height:135px}#rebound-demo .state{margin:12px 0;min-height:24px}
+</style>
+<h3>Rebound spike</h3>
+<div class="viz-row"><button type="button" class="btn btn-primary" id="rebound-play">Play</button><span class="text-small">200 ms simulated · slowed to 8 seconds</span></div>
+<div class="state" id="rebound-state" aria-live="polite">Resting</div>
+<svg class="voltage" id="rebound-voltage" role="img" aria-label="Membrane voltage: inhibition from 40 to 60 milliseconds, followed by a rebound spike"></svg>
+<svg class="current" id="rebound-current" role="img" aria-label="Inhibitory current pulse of minus 5 model units from 40 to 60 milliseconds"></svg>
+<script>
+(()=>{
+const root=document.getElementById('rebound-demo'),q=s=>root.querySelector(s),NS='http://www.w3.org/2000/svg';
+const data=[{t:0,v:-64}],spikes=[];let v=-64,u=.25*v;
+for(let i=1;i<=20000;i++){const t=i*.01,I=t>=40&&t<60?-5:0,dv=.04*v*v+5*v+140-u+I,du=.03*(.25*v-u);v+=.01*dv;u+=.01*du;if(v>=30){data.push({t,v:30});spikes.push(t);v=-60;u+=4;data.push({t,v});}else if(i%5===0)data.push({t,v});}
+const minV=Math.min(...data.map(p=>p.v))-5,maxV=35;
+let time=0,running=false,last=null,raf=null,plots=[];
+const button=q('#rebound-play');
+function build(svg,voltage){const w=Math.max(280,svg.getBoundingClientRect().width),h=voltage?255:135,top=12,bottom=h-48;
+ svg.replaceChildren();svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+ function el(tag,attrs,text){const e=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!==undefined)e.textContent=text;svg.appendChild(e);return e;}
+ const x=t=>64+(w-82)*t/200,y=z=>voltage?top+(bottom-top)*(maxV-z)/(maxV-minV):top+(bottom-top)*(1-z)/7;
+ el('title',{},voltage?'Membrane voltage':'Applied current');
+ el('rect',{x:64,y:top,width:w-82,height:bottom-top,fill:'none',stroke:'var(--border)'});
+ el('rect',{x:x(40),y:top,width:x(60)-x(40),height:bottom-top,fill:'var(--viz-series-2)',opacity:.1});
+ (voltage?[-80,-40,0,30]:[0,-5]).forEach(z=>{el('text',{x:56,y:y(z)+4,'text-anchor':'end'},z);el('line',{x1:64,x2:w-18,y1:y(z),y2:y(z),stroke:'var(--border)'});});
+ [0,100,200].forEach(t=>el('text',{x:x(t),y:bottom+19,'text-anchor':t===200?'end':'middle'},t));
+ el('text',{x:(w+46)/2,y:h-6,'text-anchor':'middle',class:'axis-title','data-axis':'x'},'Time (ms)');
+ el('text',{transform:`translate(16 ${(top+bottom)/2}) rotate(-90)`,'text-anchor':'middle',class:'axis-title','data-axis':'y'},voltage?'Voltage (mV)':'I (model units)');
+ const path=el('path',{fill:'none',stroke:voltage?'var(--viz-series-1)':'var(--viz-series-2)','stroke-width':2});
+ const guide=el('line',{x1:64,x2:64,y1:top,y2:bottom,stroke:'var(--muted-foreground)','stroke-dasharray':'3 4'});
+ return {path,guide,x,y,voltage};
+}
+function draw(){time=Number.isFinite(time)?Math.max(0,Math.min(200,time)):0;for(const p of plots){const pts=p.voltage?data.filter(d=>d.t<=time):[{t:0,v:0},...(time>=40?[{t:40,v:0},{t:40,v:-5}]:[]),...(time>=60?[{t:60,v:-5},{t:60,v:0}]:[]),{t:time,v:time>=40&&time<60?-5:0}];p.path.setAttribute('d',pts.map((d,i)=>`${i?'L':'M'}${p.x(d.t).toFixed(2)},${p.y(d.v).toFixed(2)}`).join(''));p.guide.setAttribute('x1',p.x(time));p.guide.setAttribute('x2',p.x(time));}
+ const label=time<40?'Resting':time<60?'Inhibitory input on':time<spikes[0]?'Input off · voltage rebounds':time<95?'Rebound spike · reset':'Recovery toward rest';
+ if(q('#rebound-state').textContent!==label)q('#rebound-state').textContent=label;
+}
+function layout(){plots=[build(q('#rebound-voltage'),true),build(q('#rebound-current'),false)];draw();}
+function stop(){running=false;if(raf!==null)cancelAnimationFrame(raf);raf=null;last=null;button.textContent=time>=200?'Replay':'Play';}
+function tick(now){if(!running)return;const dt=last===null?0:Math.max(0,Math.min(100,now-last));last=now;time=Math.min(200,time+dt*.025);draw();if(time>=200)stop();else raf=requestAnimationFrame(tick);}
+button.onclick=()=>{if(running){stop();return;}if(time>=200)time=0;running=true;last=null;button.textContent='Pause';raf=requestAnimationFrame(tick);};
+layout();new ResizeObserver(layout).observe(root);if(!matchMedia('(prefers-reduced-motion: reduce)').matches)button.onclick();
+})();
+</script>
+</div>
+
+</body></html>
