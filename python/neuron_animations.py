@@ -1,7 +1,7 @@
 """Science-fair neuron animations. Run with --help for examples and options.
 
 Regular, rebound, and threshold modes integrate the Izhikevich equations.
-DAP is an illustrative trace matching the reference, not a model fit.
+DAP numerically reproduces the author's Figure 1Q update scheme (dt=0.1 ms).
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ TITLES = {
     "izhikevich": "Izhikevich neuron",
     "rebound": "Rebound spike",
     "threshold": "Threshold variability",
-    "dap": "Depolarizing after-potential (schematic)",
+    "dap": "Depolarizing after-potential (simulation)",
 }
 
 
@@ -37,29 +37,49 @@ def input_current(time, mode, current=10.0):
     if mode == "threshold":
         positive = ((t >= 10) & (t < 15)) | ((t >= 90) & (t < 95))
         return np.where(positive, 1.0, np.where((t >= 80) & (t < 85), -6.0, 0.0))
-    return np.where((t >= 10) & (t < 12), 1.0, 0.0)
+    return np.where(np.abs(t - 10.0) < 1.0, 20.0, 0.0)
+
+
+def simulate_dap():
+    """Reproduce the numerical scheme in Izhikevich (2004), Figure 1Q.
+
+    Source: https://www.izhikevich.org/publications/figure1.m
+    Parameters: a=1, b=0.2, c=-60, d=-21; v=-70, u=b*v initially.
+    This example is step-sensitive: retain dt=0.1 ms AND update u using
+    the newly updated v, before testing the spike cutoff and resetting.
+    It is a reproduction of the published discrete simulation, not a
+    claim that these parameters give the same trace as dt tends to zero.
+    """
+    a, b, c, d = 1.0, 0.2, -60.0, -21.0
+    dt = 0.1
+    v, u = -70.0, -14.0
+    samples, spikes = [(0.0, v)], []
+    for i in range(501):
+        time = i * dt
+        drive = 20.0 if abs(time - 10.0) < 1.0 else 0.0
+        v += dt * (0.04 * v * v + 5 * v + 140 - u + drive)
+        u += dt * a * (b * v - u)
+        if v > 30.0:
+            samples.append((time, 30.0))
+            spikes.append(time)
+            v = c
+            u += d
+            samples.append((time, v))
+        else:
+            samples.append((time, v))
+    t, voltage = np.array(samples).T
+    return t, voltage, input_current(t, "dap"), np.array(spikes)
 
 
 def simulate(mode="izhikevich", pattern="regular", current=10.0):
     """Return time, voltage, current and spike times.
 
-    Forward Euler, dt=0.01 ms; spike cutoff 30 mV followed by v=c, u+=d.
+    Non-DAP modes: forward Euler, dt=0.01 ms, cutoff 30 mV; v=c, u+=d.
+    DAP: author's sequential update at dt=0.1 ms (see simulate_dap).
     Each reset has two samples at the same time to draw a vertical reset.
     """
     if mode == "dap":
-        anchors = np.array([
-            [0, -70], [9, -70], [10, -67], [11, -60], [12, -40],
-            [12.7, 30], [13, -60], [14, -59], [16, -55], [18, -53],
-            [20, -54], [23, -59], [27, -66], [32, -69], [40, -70], [80, -70],
-        ])
-        samples = []
-        for j, ((t0, v0), (t1, v1)) in enumerate(zip(anchors[:-1], anchors[1:])):
-            f = np.arange(30) / 30
-            ease = f * f * (3 - 2 * f) if j >= 7 else f
-            samples.extend(zip(t0 + (t1 - t0) * f, v0 + (v1 - v0) * ease))
-        samples.append(tuple(anchors[-1]))
-        t, v = np.array(samples).T
-        return t, v, input_current(t, mode), np.array([12.7])
+        return simulate_dap()
 
     duration = {"izhikevich": 500, "rebound": 200, "threshold": 120}[mode]
     a, b, c, d = PRESETS[pattern] if mode == "izhikevich" else (0.03, 0.25, -60, 4)
@@ -107,13 +127,13 @@ def phase(mode, time, spikes):
             return "Inhibition ends"
         return "Same positive pulse: spike and recovery"
     if mode == "dap":
-        if time < 10:
+        if time <= 9:
             return "Resting"
-        if time < 12:
+        if time < 11:
             return "Brief excitatory input"
-        if time < 13:
-            return "Main spike"
-        if time < 25:
+        if len(spikes) and time <= spikes[0] + 0.2:
+            return "Main spike and reset"
+        if time < 20:
             return "Depolarizing after-potential (DAP)"
         return "Returning to rest"
     return "Current off" if time < 50 else "Current on"
@@ -133,8 +153,8 @@ class NeuronAnimation:
         self.fig.subplots_adjust(bottom=0.21, top=0.87, hspace=0.15)
         self.fig.suptitle(TITLES[mode])
         self.ax_v.set_ylabel("Voltage (mV)")
-        self.ax_i.set_ylabel("Input\n(relative)" if mode == "dap" else "I\n(model units)")
-        self.ax_i.set_xlabel("Time (schematic)" if mode == "dap" else "Time (ms)")
+        self.ax_i.set_ylabel("I\n(model units)")
+        self.ax_i.set_xlabel("Time (ms)")
         self.ax_v.set_xlim(0, self.duration)
         self.ax_v.set_ylim(float(self.v.min()) - 6, float(self.v.max()) + 6)
         lo, hi = float(self.drive.min()), float(self.drive.max())
@@ -228,3 +248,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

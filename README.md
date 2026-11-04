@@ -12,3 +12,7 @@ Open any HTML file in a modern web browser. No installation or server is needed.
 The first three animations numerically integrate the Izhikevich model. The depolarizing after-potential animation is a schematic matching the reference image, not a numerical model fit. These are educational demonstrations, not experimental cancer treatment results.
 
 Model reference: E. M. Izhikevich, “Simple Model of Spiking Neurons,” IEEE Transactions on Neural Networks 14(6), 1569–1572 (2003). https://www.izhikevich.org/publications/spikes.pdf
+
+## Python simulations
+
+See [python/README.md](python/README.md) for all four Python animations. The Python DAP mode now numerically reproduces the author’s Figure 1Q using its 0.1 ms sequential update. The HTML DAP above remains a schematic.
